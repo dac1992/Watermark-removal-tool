@@ -1,0 +1,6 @@
+{
+  "name": "ClearView 视频去水印",
+  "description": "专业的视频水印移除工具，支持多区域选择和任务管理。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
