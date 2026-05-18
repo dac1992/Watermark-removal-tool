@@ -127,8 +127,15 @@ async function startServer() {
     const task = tasks[taskId];
     task.status = 'processing';
     
-    const inputPath = path.join(uploadDir, task.fileName);
-    const outputPath = path.join(outputDir, `processed_${task.fileName}`);
+    let inputPath = path.join(uploadDir, task.fileName);
+    if (!fs.existsSync(inputPath)) {
+        const altInputPath = path.join(outputDir, task.fileName);
+        if (fs.existsSync(altInputPath)) {
+            inputPath = altInputPath;
+        }
+    }
+    const resultFileName = `processed_${task.id}_${task.fileName}`;
+    const outputPath = path.join(outputDir, resultFileName);
     
     try {
       // Collect bounding boxes
@@ -165,7 +172,7 @@ async function startServer() {
       if (maskBoxes.length === 0) {
          fs.copyFileSync(inputPath, outputPath);
          task.status = 'completed';
-         task.resultUrl = `/outputs/processed_${task.fileName}`;
+         task.resultUrl = `/outputs/${resultFileName}`;
          task.progress = 100;
          return;
       }
@@ -175,14 +182,16 @@ async function startServer() {
       let cmd = ffmpeg(inputPath);
       
       const validBoxes = maskBoxes.map(box => {
-        let x = Math.max(0, Math.floor(box.x));
-        let y = Math.max(0, Math.floor(box.y));
+        let x = Math.max(1, Math.floor(box.x));
+        let y = Math.max(1, Math.floor(box.y));
         let w = Math.max(1, Math.floor(box.width));
         let h = Math.max(1, Math.floor(box.height));
         
         if (task.videoWidth && task.videoHeight) {
-          if (x + w > task.videoWidth) { w = task.videoWidth - x; }
-          if (y + h > task.videoHeight) { h = task.videoHeight - y; }
+          x = Math.max(1, Math.min(x, task.videoWidth - 3));
+          y = Math.max(1, Math.min(y, task.videoHeight - 3));
+          if (x + w >= task.videoWidth) { w = task.videoWidth - x - 1; }
+          if (y + h >= task.videoHeight) { h = task.videoHeight - y - 1; }
         }
         return {x, y, w, h};
       }).filter(b => b.w > 0 && b.h > 0);
@@ -227,7 +236,7 @@ async function startServer() {
       if (!filterProcessed) {
          fs.copyFileSync(inputPath, outputPath);
          task.status = 'completed';
-         task.resultUrl = `/outputs/processed_${task.fileName}`;
+         task.resultUrl = `/outputs/${resultFileName}`;
          task.progress = 100;
          return;
       }
@@ -256,7 +265,7 @@ async function startServer() {
         })
         .on('end', () => {
           task.status = 'completed';
-          task.resultUrl = `/outputs/processed_${task.fileName}`;
+          task.resultUrl = `/outputs/${resultFileName}`;
           task.progress = 100;
         })
         .on('error', (err, stdout, stderr) => {

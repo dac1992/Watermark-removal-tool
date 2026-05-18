@@ -72,6 +72,11 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setPreviewTask(null);
+    setMedia(null);
+    setBoxes([]);
+    setLines([]);
+    
     setIsUploading(true);
     setUploadProgress(0);
     setUploadError(null);
@@ -117,6 +122,24 @@ export default function App() {
 
     xhr.open('POST', '/api/upload');
     xhr.send(formData);
+  };
+
+  const handleContinueEdit = (task: Task) => {
+    if (!task.resultUrl) return;
+    
+    // We get the raw filename of the processed file from the resultUrl
+    const rawFileName = task.resultUrl.split('/').pop() || task.fileName;
+    
+    setMedia({
+      fileName: rawFileName,
+      originalName: 'Edited_' + task.originalName,
+      type: task.type,
+      url: task.resultUrl
+    });
+    setPreviewTask(null);
+    setBoxes([]);
+    setLines([]);
+    setActiveTab(task.type || 'video');
   };
 
   const submitTask = async () => {
@@ -281,7 +304,14 @@ export default function App() {
                             className="w-full aspect-video rounded-xl bg-black border border-slate-800 shadow-xl"
                         />
                     )}
-                    <div className="mt-6 flex justify-end">
+                    <div className="mt-6 flex justify-end gap-3">
+                       <button 
+                         onClick={() => handleContinueEdit(previewTask)}
+                         className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg transition-all"
+                       >
+                         <Eraser className="w-4 h-4" />
+                         继续去水印
+                       </button>
                        <button 
                          onClick={(e) => handleDownload(previewTask, e as any)}
                          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg transition-all"
