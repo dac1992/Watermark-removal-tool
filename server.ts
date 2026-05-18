@@ -17,6 +17,7 @@ interface WatermarkTask {
   id: string;
   originalName: string;
   fileName: string;
+  type: 'video' | 'image';
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   resultUrl?: string;
@@ -65,28 +66,31 @@ async function startServer() {
   };
 
   // API Routes
-  app.post("/api/upload", upload.single('video'), (req: any, res) => {
+  app.post("/api/upload", upload.single('file'), (req: any, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
     
     const originalName = fixEncoding(req.file.originalname);
+    const isImage = req.file.mimetype.startsWith('image/');
     
     res.json({ 
       fileName: req.file.filename,
       originalName: originalName,
+      type: isImage ? 'image' : 'video',
       url: `/uploads/${req.file.filename}` 
     });
   });
 
   app.post("/api/tasks", (req, res) => {
-    const { fileName, originalName, boxes, lines, params, videoWidth, videoHeight } = req.body;
+    const { fileName, originalName, type, boxes, lines, params, videoWidth, videoHeight } = req.body;
     const taskId = uuidv4();
     
     const newTask: WatermarkTask = {
       id: taskId,
       fileName,
       originalName,
+      type: type || 'video',
       status: 'pending',
       progress: 0,
       boxes: boxes || [],
@@ -202,7 +206,7 @@ async function startServer() {
             
             validBoxes.forEach((box, i) => {
                if (mode === 'blur') {
-                  complexFilter.push(`[v${i}]crop=${box.w}:${box.h}:${box.x}:${box.y},boxblur=${task.params.blur || 20}[b${i}]`);
+                  complexFilter.push(`[v${i}]crop=${box.w}:${box.h}:${box.x}:${box.y},gblur=sigma=${task.params.blur || 20}[b${i}]`);
                } else {
                   complexFilter.push(`[v${i}]crop=${box.w}:${box.h}:${box.x}:${box.y},scale=iw/10:-1,scale=iw*10:-1[b${i}]`);
                }
@@ -228,8 +232,9 @@ async function startServer() {
          return;
       }
 
-      cmd
-        .outputOptions([
+      let outputOptions: string[] = [];
+      if (task.type === 'video') {
+        outputOptions = [
           '-c:v libx264',
           '-preset veryfast',
           '-crf 28',
@@ -237,7 +242,13 @@ async function startServer() {
           '-c:a aac',
           '-b:a 128k',
           '-movflags +faststart'
-        ])
+        ];
+      } else {
+        outputOptions = ['-q:v', '2', '-vframes', '1']; // high quality image output
+      }
+
+      cmd
+        .outputOptions(outputOptions)
         .on('progress', (progress) => {
           if (progress.percent && task.status === 'processing') {
             task.progress = Math.min(99, Math.floor(progress.percent));
@@ -248,8 +259,10 @@ async function startServer() {
           task.resultUrl = `/outputs/processed_${task.fileName}`;
           task.progress = 100;
         })
-        .on('error', (err) => {
+        .on('error', (err, stdout, stderr) => {
           console.error("FFmpeg error:", err);
+          console.error("FFmpeg stdout:", stdout);
+          console.error("FFmpeg stderr:", stderr);
           task.status = 'failed';
         })
         .save(outputPath);

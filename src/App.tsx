@@ -15,7 +15,8 @@ import {
   X
 } from 'lucide-react';
 import { VideoCanvas } from './components/VideoCanvas';
-import { BoundingBox, BrushLine, Task, VideoInfo } from './types';
+import { ImageCanvas } from './components/ImageCanvas';
+import { BoundingBox, BrushLine, Task, MediaInfo } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -24,7 +25,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function App() {
-  const [video, setVideo] = useState<VideoInfo | null>(null);
+  const [activeTab, setActiveTab] = useState<'video' | 'image'>('video');
+  const [media, setMedia] = useState<MediaInfo | null>(null);
   const [boxes, setBoxes] = useState<BoundingBox[]>([]);
   const [lines, setLines] = useState<BrushLine[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -74,7 +76,7 @@ export default function App() {
     setUploadProgress(0);
     setUploadError(null);
     const formData = new FormData();
-    formData.append('video', file);
+    formData.append('file', file);
 
     const xhr = new XMLHttpRequest();
     
@@ -90,10 +92,15 @@ export default function App() {
         try {
           const data = JSON.parse(xhr.responseText);
           const localUrl = URL.createObjectURL(file);
-          setVideo({
+          setMedia({
             ...data,
             url: localUrl
           });
+          if (data.type === 'image') {
+              setActiveTab('image');
+          } else {
+              setActiveTab('video');
+          }
         } catch (err) {
           setUploadError("返回数据解析错误");
         }
@@ -113,7 +120,7 @@ export default function App() {
   };
 
   const submitTask = async () => {
-    if (!video || (boxes.length === 0 && lines.length === 0)) return;
+    if (!media || (boxes.length === 0 && lines.length === 0)) return;
 
     setIsSubmitting(true);
     try {
@@ -137,8 +144,9 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: video.fileName,
-          originalName: video.originalName,
+          fileName: media.fileName,
+          originalName: media.originalName,
+          type: media.type,
           boxes: scaledBoxes,
           lines: scaledLines,
           params,
@@ -146,7 +154,7 @@ export default function App() {
           videoHeight: canvasInfo.videoHeight
         }),
       });
-      setVideo(null);
+      setMedia(null);
       setBoxes([]);
       setLines([]);
       fetchTasks();
@@ -187,13 +195,35 @@ export default function App() {
       {/* Header */}
       <header className="border-b border-slate-900 bg-slate-950/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-              <Eraser className="w-6 h-6 text-white" />
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+                <Eraser className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight text-white">ClearView</h1>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest leading-none">专业去水印工具</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">ClearView</h1>
-              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest leading-none">视频去水印专家</p>
+            
+            {/* Nav Tabs */}
+            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
+              <button
+                onClick={() => { setActiveTab('video'); setMedia(null); setBoxes([]); setLines([]); }}
+                className={cn("px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                  activeTab === 'video' ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                )}
+              >
+                视频去水印
+              </button>
+              <button
+                onClick={() => { setActiveTab('image'); setMedia(null); setBoxes([]); setLines([]); }}
+                className={cn("px-4 py-1.5 rounded-md text-sm font-medium transition-all",
+                  activeTab === 'image' ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                )}
+              >
+                图片去水印
+              </button>
             </div>
           </div>
           
@@ -202,13 +232,14 @@ export default function App() {
             className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-slate-200 px-4 py-2 rounded-lg border border-slate-800 transition-all font-medium text-sm shadow-xl"
           >
             <Upload className="w-4 h-4" />
-            上传新视频
+            {activeTab === 'video' ? '上传新视频' : '上传新图片'}
           </button>
           <input 
             type="file" 
+            key={activeTab} // ensure it re-renders
             ref={fileInputRef} 
             className="hidden" 
-            accept="video/*" 
+            accept={activeTab === 'video' ? "video/*" : "image/*"} 
             onChange={handleFileUpload}
           />
         </div>
@@ -237,11 +268,19 @@ export default function App() {
                     </button>
                 </div>
                 <div className="p-6">
-                    <video 
-                        src={previewTask.resultUrl} 
-                        controls 
-                        className="w-full aspect-video rounded-xl bg-black border border-slate-800 shadow-xl"
-                    />
+                    {previewTask.type === 'image' ? (
+                        <img 
+                            src={previewTask.resultUrl} 
+                            alt="Processing result"
+                            className="w-full aspect-video object-contain rounded-xl bg-black border border-slate-800 shadow-xl"
+                        />
+                    ) : (
+                        <video 
+                            src={previewTask.resultUrl} 
+                            controls 
+                            className="w-full aspect-video rounded-xl bg-black border border-slate-800 shadow-xl"
+                        />
+                    )}
                     <div className="mt-6 flex justify-end">
                        <button 
                          onClick={(e) => handleDownload(previewTask, e as any)}
@@ -253,7 +292,7 @@ export default function App() {
                     </div>
                 </div>
             </motion.div>
-          ) : !video ? (
+          ) : !media ? (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -265,7 +304,7 @@ export default function App() {
                   <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-6 shadow-xl border border-slate-800">
                     <Upload className="w-8 h-8 text-blue-500 animate-bounce" />
                   </div>
-                  <h2 className="text-xl font-semibold text-white mb-6">正在上传视频...</h2>
+                  <h2 className="text-xl font-semibold text-white mb-6">正在上传{activeTab === 'video' ? '视频' : '图片'}...</h2>
                   <div className="w-full bg-slate-800 rounded-full h-3 mb-2 shadow-inner overflow-hidden border border-slate-700">
                     <motion.div 
                       className="bg-blue-500 h-full rounded-full"
@@ -280,8 +319,8 @@ export default function App() {
                   <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-xl border border-slate-800">
                     <Upload className="w-10 h-10 text-slate-500 group-hover:text-blue-500" />
                   </div>
-                  <h2 className="text-2xl font-semibold text-white mb-2">上传视频开始去水印</h2>
-                  <p className="text-slate-400 max-w-sm mb-4">拖放视频文件到此处，或点击浏览。支持 MP4, MOV, AVI。</p>
+                  <h2 className="text-2xl font-semibold text-white mb-2">上传{activeTab === 'video' ? '视频' : '图片'}开始去水印</h2>
+                  <p className="text-slate-400 max-w-sm mb-4">拖放{activeTab === 'video' ? '视频' : '图片'}文件到此处，或点击浏览。</p>
                   {uploadError && (
                      <div className="flex items-center justify-center gap-2 text-rose-400 bg-rose-400/10 px-4 py-2 rounded-lg text-sm border border-rose-500/20">
                        <AlertCircle className="w-4 h-4" />
@@ -301,12 +340,12 @@ export default function App() {
                 <div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-900/50">
                     <Scissors className="w-5 h-5 text-blue-500" />
-                    编辑器: <span className="text-blue-200">{video.originalName}</span>
+                    编辑器: <span className="text-blue-200">{media.originalName}</span>
                   </h2>
                 </div>
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => { setVideo(null); setBoxes([]); setLines([]); }}
+                    onClick={() => { setMedia(null); setBoxes([]); setLines([]); }}
                     className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-red-950 text-slate-500 hover:text-red-400 rounded-lg text-xs font-semibold border border-slate-800 transition-all"
                   >
                     <X className="w-4 h-4" />
@@ -315,18 +354,33 @@ export default function App() {
                 </div>
               </div>
 
-              <VideoCanvas 
-                videoUrl={video.url} 
-                boxes={boxes} 
-                setBoxes={setBoxes} 
-                lines={lines}
-                setLines={setLines}
-                onClear={clearAllMarks}
-                drawMode={drawMode}
-                setDrawMode={setDrawMode}
-                brushSize={brushSize}
-                onSizeChange={setCanvasInfo}
-              />
+              {media.type === 'image' ? (
+                <ImageCanvas 
+                  imageUrl={media.url} 
+                  boxes={boxes} 
+                  setBoxes={setBoxes} 
+                  lines={lines}
+                  setLines={setLines}
+                  onClear={clearAllMarks}
+                  drawMode={drawMode}
+                  setDrawMode={setDrawMode}
+                  brushSize={brushSize}
+                  onSizeChange={setCanvasInfo}
+                />
+              ) : (
+                <VideoCanvas 
+                  videoUrl={media.url} 
+                  boxes={boxes} 
+                  setBoxes={setBoxes} 
+                  lines={lines}
+                  setLines={setLines}
+                  onClear={clearAllMarks}
+                  drawMode={drawMode}
+                  setDrawMode={setDrawMode}
+                  brushSize={brushSize}
+                  onSizeChange={setCanvasInfo}
+                />
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 space-y-4 shadow-lg">
