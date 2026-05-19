@@ -1,0 +1,50 @@
+name: Build and Deploy
+
+# 只要 main 或 master 分支有代码推送，就会触发此流程
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 拉取代码 (Checkout Code)
+        uses: actions/checkout@v4
+
+      - name: 2. 安装 Node.js (Setup Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 3. 在 GitHub 飞速服务器上安装依赖并打包
+        run: |
+          npm install
+          npm run build
+          npm prune --production
+
+      - name: 4. 通过 SCP 将所有文件发送到你的服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PWD }}
+          port: 22
+          source: "./*"
+          target: "/www/wwwroot/watermark-removal-tool/" # 确保这是你在宝塔里建网站的目录
+          rm: false
+
+      - name: 5. 传输完后，自动重启服务器的 PM2 服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PWD }}
+          port: 22
+          script: |
+            cd /www/wwwroot/watermark-removal-tool
+            # 这里的 watermark_removal_tool 要和你宝塔 PM2 中的项目名称完全一致
+            pm2 restart watermark_removal_tool || echo "PM2 restart failed, you might need to check manually."
