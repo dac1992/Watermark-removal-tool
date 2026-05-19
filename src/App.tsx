@@ -44,7 +44,9 @@ export default function App() {
   const [params, setParams] = useState({
     blur: 15,
     strength: 5,
-    mode: 'delogo'
+    mode: 'delogo',
+    aiVendor: 'google',
+    aiApiKey: ''
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -437,12 +439,47 @@ export default function App() {
                         onChange={e => setParams({...params, mode: e.target.value as any})}
                         className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner"
                       >
-                        <option value="delogo">智能融合 (保留背景颜色特征) [推荐]</option>
+                        <option value="ai">AI 大模型智能重绘 (超清无痕全新修复) [推荐]</option>
+                        <option value="delogo">智能融合 (保留背景颜色特征) </option>
                         <option value="blur">高斯模糊 (平滑去除复杂部分)</option>
                         <option value="mosaic">马赛克 (像素化保护隐私)</option>
                         <option value="solid">纯色遮挡 (完全涂黑抹去)</option>
                       </select>
                     </div>
+                    
+                    {params.mode === 'ai' && (
+                        <div className="space-y-4 pt-2 border-t border-slate-800">
+                          <div>
+                            <label className="text-slate-400 text-xs mb-2 block">AI 厂商 (AI Provider)</label>
+                            <select 
+                              value={params.aiVendor}
+                              onChange={e => setParams({...params, aiVendor: e.target.value as any})}
+                              className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner"
+                            >
+                              <option value="google">Google Gemini (推荐)</option>
+                              <option value="openai">OpenAI (需上传遮罩蒙版, 暂仅做展示)</option>
+                              <option value="anthropic">Anthropic Claude</option>
+                              <option value="aliyun">阿里云通义千问</option>
+                              <option value="volcengine">字节跳动火山引擎 (Doubao)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-slate-400 text-xs mb-2 block">API Key (用户提供)</label>
+                            <input 
+                              type="password" 
+                              value={params.aiApiKey} 
+                              onChange={e => setParams({...params, aiApiKey: e.target.value})}
+                              placeholder={`输入 ${params.aiVendor} 的 API Key`}
+                              spellCheck={false}
+                              className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner font-mono"
+                            />
+                            {params.aiVendor === 'google' && (
+                              <p className="text-[10px] text-slate-500 mt-1">请填写具备 gemini-2.5-flash-image 权限的 Key 以避免配额超限</p>
+                            )}
+                          </div>
+                        </div>
+                    )}
+
                     {drawMode === 'brush' && (
                         <div>
                           <div className="flex justify-between text-xs mb-2">
