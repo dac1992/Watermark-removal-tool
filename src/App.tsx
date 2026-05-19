@@ -225,7 +225,7 @@ export default function App() {
               </div>
               <div className="pt-1">
                 <div className="flex items-baseline gap-2">
-                  <h1 className="text-xl font-bold tracking-tight text-white leading-none">ClearView</h1>
+                  <h1 className="text-xl font-bold tracking-tight text-white leading-none">去水印工具</h1>
                   {/* 版本号在这里修改 👇 */}
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">v1.0.0</span>
                 </div>
