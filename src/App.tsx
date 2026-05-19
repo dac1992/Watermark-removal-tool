@@ -224,8 +224,12 @@ export default function App() {
                 <Eraser className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight text-white">ClearView</h1>
-                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest leading-none">专业去水印工具</p>
+                <div className="flex items-baseline gap-2">
+                  <h1 className="text-xl font-bold tracking-tight text-white">ClearView</h1>
+                  {/* 版本号在这里修改 👇 */}
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">v1.0.0</span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest leading-none mt-1">专业去水印工具</p>
               </div>
             </div>
             
