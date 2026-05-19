@@ -21,6 +21,7 @@ interface WatermarkTask {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   resultUrl?: string;
+  error?: string;
   boxes: Array<{ x: number, y: number, width: number, height: number }>;
   lines?: Array<{ points: number[], brushSize: number }>;
   params: any;
@@ -281,6 +282,7 @@ async function startServer() {
           console.error("FFmpeg stdout:", stdout);
           console.error("FFmpeg stderr:", stderr);
           task.status = 'failed';
+          task.error = stderr ? String(stderr) : (err.message || String(err));
         })
         .save(outputPath);
       

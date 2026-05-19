@@ -565,6 +565,12 @@ export default function App() {
                       </div>
                     )}
 
+                    {task.status === 'failed' && (
+                      <div className="mt-2 text-[10px] text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20 max-h-24 overflow-y-auto font-mono">
+                        {task.error || "发生了未知错误"}
+                      </div>
+                    )}
+
                     {task.status === 'completed' && (
                       <div className="mt-4 flex gap-2">
                           <button 

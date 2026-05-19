@@ -20,6 +20,7 @@ export interface Task {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   resultUrl?: string;
+  error?: string;
   createdAt: string;
 }
 
