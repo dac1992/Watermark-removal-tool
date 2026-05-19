@@ -217,24 +217,24 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
       {/* Header */}
       <header className="border-b border-slate-900 bg-slate-950/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex flex-col gap-4">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20 shrink-0">
                 <Eraser className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="pt-1">
                 <div className="flex items-baseline gap-2">
-                  <h1 className="text-xl font-bold tracking-tight text-white">ClearView</h1>
+                  <h1 className="text-xl font-bold tracking-tight text-white leading-none">ClearView</h1>
                   {/* 版本号在这里修改 👇 */}
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">v1.0.0</span>
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest leading-none mt-1">专业去水印工具</p>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-1.5 leading-none">专业去水印工具</p>
               </div>
             </div>
             
             {/* Nav Tabs */}
-            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
+            <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800 shrink-0">
               <button
                 onClick={() => { setActiveTab('video'); setMedia(null); setBoxes([]); setLines([]); }}
                 className={cn("px-4 py-1.5 rounded-md text-sm font-medium transition-all",
