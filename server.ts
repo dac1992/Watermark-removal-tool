@@ -66,7 +66,15 @@ async function startServer() {
   };
 
   // API Routes
-  app.post("/api/upload", upload.single('file'), (req: any, res) => {
+  app.post("/api/upload", (req, res, next) => {
+    upload.single('file')(req, res, (err) => {
+      if (err) {
+        console.error("Multer upload error:", err);
+        return res.status(500).json({ error: "Upload failed: " + err.message });
+      }
+      next();
+    });
+  }, (req: any, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }

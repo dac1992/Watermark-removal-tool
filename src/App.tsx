@@ -110,7 +110,12 @@ export default function App() {
           setUploadError("返回数据解析错误");
         }
       } else {
-        setUploadError(`上传失败 (${xhr.status})`);
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          setUploadError(`上传失败 (${xhr.status}): ${errData.error || '服务器内部错误'}`);
+        } catch (e) {
+          setUploadError(`上传失败 (${xhr.status})`);
+        }
       }
       setIsUploading(false);
     };
