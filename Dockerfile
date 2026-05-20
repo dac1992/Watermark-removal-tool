@@ -18,10 +18,11 @@ COPY . .
 # Build the application (compiles frontend and backend)
 RUN npm run build
 
-# Expose the port your app runs on
-EXPOSE 3000
+# Expose the port your app runs on (Hugging Face Spaces requires port 7860)
+EXPOSE 7860
 
-# Set environment to production
+# Set port to 7860 for Hugging Face Spaces
+ENV PORT=7860
 ENV NODE_ENV=production
 
 # Start the application
