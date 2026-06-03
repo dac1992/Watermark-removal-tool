@@ -7,6 +7,7 @@ import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import { GoogleGenAI } from "@google/genai";
+import Replicate from "replicate";
 
 // Configure ffmpeg static path
 if (ffmpegStatic) {
@@ -16,6 +17,7 @@ if (ffmpegStatic) {
 // Storage for tasks (in-memory for this demo)
 interface WatermarkTask {
   id: string;
+  sessionId: string;
   originalName: string;
   fileName: string;
   type: 'video' | 'image';
@@ -33,11 +35,13 @@ interface WatermarkTask {
 
 const tasks: Record<string, WatermarkTask> = {};
 
+const isVercel = process.env.VERCEL === "1" || process.env.VERCEL;
+
 // Ensure upload directory exists
-const uploadDir = path.join(process.cwd(), 'uploads');
-const outputDir = path.join(process.cwd(), 'outputs');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+const uploadDir = isVercel ? '/tmp/uploads' : path.join(process.cwd(), 'uploads');
+const outputDir = isVercel ? '/tmp/outputs' : path.join(process.cwd(), 'outputs');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -51,21 +55,19 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-async function startServer() {
-  const app = express();
-  const PORT = process.env.PORT || 3000;
+const app = express();
 
-  app.use(express.json({ limit: '500mb' }));
-  app.use(express.urlencoded({ limit: '500mb', extended: true }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
-  // Fix for multer filename encoding (latin1 to utf8)
-  const fixEncoding = (str: string) => {
-    try {
-      return Buffer.from(str, 'latin1').toString('utf8');
-    } catch (e) {
-      return str;
-    }
-  };
+// Fix for multer filename encoding (latin1 to utf8)
+const fixEncoding = (str: string) => {
+  try {
+    return Buffer.from(str, 'latin1').toString('utf8');
+  } catch (e) {
+    return str;
+  }
+};
 
   // API Routes
   app.post("/api/upload", (req, res, next) => {
@@ -88,16 +90,18 @@ async function startServer() {
       fileName: req.file.filename,
       originalName: originalName,
       type: isImage ? 'image' : 'video',
-      url: `/uploads/${req.file.filename}` 
+      url: `/api/uploads/${req.file.filename}` 
     });
   });
 
   app.post("/api/tasks", (req, res) => {
-    const { fileName, originalName, type, boxes, lines, params, videoWidth, videoHeight } = req.body;
+    const { sessionId, fileName, originalName, type, boxes, lines, params, videoWidth, videoHeight } = req.body;
+    const finalSessionId = sessionId || 'default';
     const taskId = uuidv4();
     
     const newTask: WatermarkTask = {
       id: taskId,
+      sessionId: finalSessionId,
       fileName,
       originalName,
       type: type || 'video',
@@ -119,7 +123,11 @@ async function startServer() {
   });
 
   app.get("/api/tasks", (req, res) => {
-    res.json(Object.values(tasks).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+    const sessionId = req.query.sessionId as string || 'default';
+    const userTasks = Object.values(tasks)
+        .filter(t => t.sessionId === sessionId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    res.json(userTasks);
   });
 
   app.get("/api/tasks/:id", (req, res) => {
@@ -182,7 +190,7 @@ async function startServer() {
       if (maskBoxes.length === 0) {
          fs.copyFileSync(inputPath, outputPath);
          task.status = 'completed';
-         task.resultUrl = `/outputs/${resultFileName}`;
+         task.resultUrl = `/api/outputs/${resultFileName}`;
          task.progress = 100;
          return;
       }
@@ -221,39 +229,166 @@ async function startServer() {
                  });
                  
                  const base64Data = fs.readFileSync(framePath).toString('base64');
-                 const userApiKey = task.params?.aiApiKey?.trim() || process.env.GEMINI_API_KEY;
-                 if (task.params?.aiVendor && task.params?.aiVendor !== 'google') {
-                     throw new Error(`目前后台自动处理仅完整支持 Google Gemini 大模型，暂未实装 ${task.params?.aiVendor} 接口。`);
-                 }
-                 if (!userApiKey) {
-                     throw new Error("请在界面中填写有效的 API Key");
-                 }
-                 const aiClient = new GoogleGenAI({ apiKey: userApiKey });
-                 
-                 const response = await aiClient.models.generateContent({
-                     model: 'gemini-2.5-flash-image',
-                     contents: {
-                         parts: [
-                             {
-                                 inlineData: {
-                                     data: base64Data,
-                                     mimeType: "image/jpeg",
-                                 },
-                             },
-                             {
-                                 text: 'You are an advanced AI image restorer. Remove all watermarks, logos, subtitles and text from this image. Fill in the removed areas with a seamless and perfect reconstruction of the background. Do not alter any other part of the image.',
-                             },
-                         ],
-                     },
-                 });
-                 let geminiBase64 = null;
-                 for (const part of response.candidates?.[0]?.content?.parts || []) {
-                     if (part.inlineData) {
-                         geminiBase64 = part.inlineData.data;
+                 const vendor = task.params?.aiVendor || 'google';
+                 let aiBase64 = null;
+
+                 if (vendor === 'google') {
+                     const userApiKey = task.params?.aiApiKey?.trim() || process.env.GEMINI_API_KEY;
+                     if (!userApiKey) throw new Error("请在界面中填写有效的 Gemini API Key");
+                     
+                     const aiClient = new GoogleGenAI({ apiKey: userApiKey });
+                     const response = await aiClient.models.generateContent({
+                         model: 'gemini-2.5-flash-image',
+                         contents: {
+                             parts: [
+                                 { inlineData: { data: base64Data, mimeType: "image/jpeg" } },
+                                 { text: 'You are an advanced AI image restorer. Remove all watermarks, logos, subtitles and text from this image. Fill in the removed areas with a seamless and perfect reconstruction of the background. Do not alter any other part of the image.' },
+                             ],
+                         },
+                     });
+                     for (const part of response.candidates?.[0]?.content?.parts || []) {
+                         if (part.inlineData) aiBase64 = part.inlineData.data;
                      }
+                 } else if (vendor === 'replicate') {
+                     const replicateKey = task.params?.aiApiKey?.trim() || process.env.REPLICATE_API_TOKEN;
+                     if (!replicateKey) throw new Error("请在界面中填写有效的 Replicate API Token");
+
+                     // Create mask image
+                     const maskPath = path.join(outputDir, `mask_${task.id}.jpg`);
+                     const vWidth = task.videoWidth || 1280;
+                     const vHeight = task.videoHeight || 720;
+                     const drawboxFilters = validBoxes.map(b => `drawbox=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:color=white:t=fill`);
+                     
+                     await new Promise((resolve, reject) => {
+                         ffmpeg(framePath)
+                           .outputOptions(['-vframes', '1', '-q:v', '2'])
+                           .videoFilters(['drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill', ...drawboxFilters])
+                           .on('end', resolve)
+                           .on('error', reject)
+                           .save(maskPath);
+                     });
+                     
+                     const maskBase64 = fs.readFileSync(maskPath).toString('base64');
+                     const replicateClient = new Replicate({ auth: replicateKey });
+                     
+                     type ReplicateModelVersion = `${string}/${string}:${string}`;
+                     const modelId = "stability-ai/stable-diffusion-inpainting:95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3" as ReplicateModelVersion;
+
+                     const output = await replicateClient.run(modelId, {
+                         input: {
+                             prompt: "seamless background matching the surrounding area perfectly, empty space, clean, seamless",
+                             negative_prompt: "watermark, logo, text, subtitles, person, watermark overlay",
+                             image: `data:image/jpeg;base64,${base64Data}`,
+                             mask: `data:image/jpeg;base64,${maskBase64}`
+                         }
+                     }) as string[];
+                     
+                     if (output && output.length > 0) {
+                         const imgUrl = output[0];
+                         const imgRes = await fetch(imgUrl);
+                         const arrayBuffer = await imgRes.arrayBuffer();
+                         aiBase64 = Buffer.from(arrayBuffer).toString('base64');
+                     }
+                 } else if (vendor === 'openai_compatible') {
+                     const apiKey = task.params?.aiApiKey?.trim();
+                     if (!apiKey) throw new Error("请在界面中填写有效的代理 API Key");
+                     
+                     const baseUrl = (task.params?.aiBaseUrl?.trim() || "https://api.openai.com/v1").replace(/\/$/, "");
+                     const modelId = task.params?.aiModel || 'dall-e-2';
+                     
+                     const vWidth = task.videoWidth || 1280;
+                     const vHeight = task.videoHeight || 720;
+                     
+                     // Generate PNG image directly (OpenAI requires PNG)
+                     const framePngPath = path.join(outputDir, `frame_${task.id}.png`);
+                     await new Promise((resolve, reject) => {
+                         ffmpeg(inputPath)
+                           .outputOptions(['-vframes', '1', '-vcodec', 'png'])
+                           .on('end', resolve)
+                           .on('error', reject)
+                           .save(framePngPath);
+                     });
+                     
+                     // Generate Mask PNG image
+                     const maskPngPath = path.join(outputDir, `mask_${task.id}.png`);
+                     const drawboxFilters = validBoxes.map(b => `drawbox=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:color=white:t=fill`);
+                     
+                     await new Promise((resolve, reject) => {
+                         ffmpeg(framePngPath)
+                           .outputOptions(['-vframes', '1', '-vcodec', 'png'])
+                           .videoFilters(['drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill', ...drawboxFilters])
+                           .on('end', resolve)
+                           .on('error', reject)
+                           .save(maskPngPath);
+                     });
+                     
+                     const { Blob } = require('buffer');
+                     const formData = new FormData();
+                     formData.append('image', new Blob([fs.readFileSync(framePngPath)], { type: 'image/png' }), 'image.png');
+                     formData.append('mask', new Blob([fs.readFileSync(maskPngPath)], { type: 'image/png' }), 'mask.png');
+                     formData.append('prompt', 'clean seamless background filling the masked area perfectly, no watermark, empty space');
+                     formData.append('model', modelId);
+                     
+                     const res = await fetch(`${baseUrl}/images/edits`, {
+                         method: "POST",
+                         headers: {
+                             "Authorization": `Bearer ${apiKey}`
+                         },
+                         body: formData
+                     });
+                     
+                     if (!res.ok) {
+                         const errText = await res.text();
+                         throw new Error(`OpenAI 接口报错 [${res.status}]: ${errText.substring(0, 200)}`);
+                     }
+                     
+                     const data = await res.json();
+                     if (data?.data?.[0]?.url) {
+                         const imgRes = await fetch(data.data[0].url);
+                         const arrayBuffer = await imgRes.arrayBuffer();
+                         aiBase64 = Buffer.from(arrayBuffer).toString('base64');
+                     } else if (data?.data?.[0]?.b64_json) {
+                         aiBase64 = data.data[0].b64_json;
+                     } else {
+                         throw new Error("OpenAI 返回数据无效");
+                     }
+                 } else if (vendor === 'grsai') {
+                     const apiKey = task.params?.aiApiKey?.trim();
+                     if (!apiKey) throw new Error("请在界面中填写有效的 Grsai API Key");
+                     
+                     const res = await fetch("https://grsaiapi.com/v1/api/generate", {
+                         method: "POST",
+                         headers: {
+                             "Authorization": `Bearer ${apiKey}`,
+                             "Content-Type": "application/json"
+                         },
+                         body: JSON.stringify({
+                             model: "gpt-image-2",
+                             prompt: "Please remove any watermarks, logos, or text from this image and restore the background perfectly. Make sure the rest of the image remains completely untouched.",
+                             images: [`data:image/jpeg;base64,${base64Data}`],
+                             replyType: "json"
+                         })
+                     });
+                     
+                     if (!res.ok) {
+                         const errText = await res.text();
+                         throw new Error(`Grsai 接口报错 [${res.status}]: ${errText.substring(0, 200)}`);
+                     }
+                     
+                     const data = await res.json();
+                     if (data?.status === 'succeeded' && data?.results?.[0]?.url) {
+                         const imgRes = await fetch(data.results[0].url);
+                         const arrayBuffer = await imgRes.arrayBuffer();
+                         aiBase64 = Buffer.from(arrayBuffer).toString('base64');
+                     } else {
+                         throw new Error(`Grsai 生成失败或违规: ${data?.error || JSON.stringify(data)}`);
+                     }
+                 } else {
+                     throw new Error(`暂不支持 ${vendor} 服务。`);
                  }
-                 if (geminiBase64) {
-                     fs.writeFileSync(cleanFramePath, Buffer.from(geminiBase64, 'base64'));
+
+                 if (aiBase64) {
+                     fs.writeFileSync(cleanFramePath, Buffer.from(aiBase64, 'base64'));
                      cmd.input(cleanFramePath);
                      
                      let complexFilter: string[] = [];
@@ -274,7 +409,7 @@ async function startServer() {
                      cmd.complexFilter(complexFilter.join(';'), ['vout']);
                      filterProcessed = true;
                  } else {
-                     throw new Error("No image generated by Gemini");
+                     throw new Error("No image generated by AI vendor.");
                  }
              } catch (aiErr) {
                  console.error("AI Generation failed, falling back to delogo", aiErr);
@@ -325,7 +460,7 @@ async function startServer() {
       if (!filterProcessed) {
          fs.copyFileSync(inputPath, outputPath);
          task.status = 'completed';
-         task.resultUrl = `/outputs/${resultFileName}`;
+         task.resultUrl = `/api/outputs/${resultFileName}`;
          task.progress = 100;
          return;
       }
@@ -354,7 +489,7 @@ async function startServer() {
         })
         .on('end', () => {
           task.status = 'completed';
-          task.resultUrl = `/outputs/${resultFileName}`;
+          task.resultUrl = `/api/outputs/${resultFileName}`;
           task.progress = 100;
         })
         .on('error', (err, stdout, stderr) => {
@@ -372,24 +507,48 @@ async function startServer() {
     }
   }
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  // Custom routes to serve files on Vercel since express.static acts weirdly with /tmp on serverless
+  app.get('/api/uploads/:filename', (req, res) => {
+      const filePath = path.join(uploadDir, req.params.filename);
+      if (fs.existsSync(filePath)) {
+          res.sendFile(filePath);
+      } else {
+          res.status(404).send('File not found');
+      }
   });
-}
 
-startServer();
+  app.get('/api/outputs/:filename', (req, res) => {
+      const filePath = path.join(outputDir, req.params.filename);
+      if (fs.existsSync(filePath)) {
+          res.sendFile(filePath);
+      } else {
+          res.status(404).send('File not found');
+      }
+  });
+
+export default app;
+
+if (!isVercel) {
+  async function startServer() {
+      const PORT = Number(process.env.PORT) || 3000;
+      // Vite middleware for development
+      if (process.env.NODE_ENV !== "production") {
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } else {
+        const distPath = path.join(process.cwd(), 'dist');
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+      }
+
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+      });
+  }
+  startServer();
+}

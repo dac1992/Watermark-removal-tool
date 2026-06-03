@@ -24,6 +24,15 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const getSessionId = () => {
+  let id = localStorage.getItem('watermark_session_id');
+  if (!id) {
+    id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('watermark_session_id', id);
+  }
+  return id;
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'video' | 'image'>('video');
   const [media, setMedia] = useState<MediaInfo | null>(null);
@@ -45,8 +54,9 @@ export default function App() {
     blur: 15,
     strength: 5,
     mode: 'delogo',
-    aiVendor: 'google',
-    aiApiKey: ''
+    aiVendor: 'openai_compatible',
+    aiApiKey: '',
+    aiBaseUrl: ''
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,7 +69,7 @@ export default function App() {
 
   const fetchTasks = async () => {
     try {
-      const res = await fetch('/api/tasks');
+      const res = await fetch(`/api/tasks?sessionId=${getSessionId()}`);
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -172,8 +182,11 @@ export default function App() {
 
       await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
+          sessionId: getSessionId(),
           fileName: media.fileName,
           originalName: media.originalName,
           type: media.type,
@@ -456,11 +469,13 @@ export default function App() {
                               onChange={e => setParams({...params, aiVendor: e.target.value as any})}
                               className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner"
                             >
-                              <option value="google">Google Gemini (推荐)</option>
-                              <option value="openai">OpenAI (需上传遮罩蒙版, 暂仅做展示)</option>
-                              <option value="anthropic">Anthropic Claude</option>
-                              <option value="aliyun">阿里云通义千问</option>
-                              <option value="volcengine">字节跳动火山引擎 (Doubao)</option>
+                              <option value="openai_compatible">OpenAI 兼容接口 (支持各种中转代理 / DALL-E 2) [推荐]</option>
+                              <option value="grsai">Grsai API (gpt-image-2 图生图)</option>
+                              <option value="google">Google Gemini (快速替换)</option>
+                              <option value="replicate">Replicate ( Lama / 高级画质修复)</option>
+                              <option value="anthropic">Anthropic Claude (暂仅做展示)</option>
+                              <option value="aliyun">阿里云通义千问 (暂仅做展示)</option>
+                              <option value="volcengine">字节跳动火山引擎 (Doubao) (暂仅做展示)</option>
                             </select>
                           </div>
                           <div>
@@ -473,6 +488,22 @@ export default function App() {
                               spellCheck={false}
                               className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner font-mono"
                             />
+                            {params.aiVendor === 'openai_compatible' && (
+                              <div className="mt-4">
+                                <label className="text-slate-400 text-xs mb-2 block">API Base URL (代理地址)</label>
+                                <input 
+                                  type="text" 
+                                  value={params.aiBaseUrl} 
+                                  onChange={e => setParams({...params, aiBaseUrl: e.target.value})}
+                                  placeholder="https://api.siliconflow.cn/v1 或其他"
+                                  spellCheck={false}
+                                  className="w-full bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors shadow-inner font-mono"
+                                />
+                                <p className="text-xs text-slate-500 mt-2">
+                                  在国内可使用硅基流动、各中转代理等获取便宜的接口替换。推荐模型: 默认 dall-e-2。
+                                </p>
+                              </div>
+                            )}
                             {params.aiVendor === 'google' && (
                               <p className="text-[10px] text-slate-500 mt-1">请填写具备 gemini-2.5-flash-image 权限的 Key 以避免配额超限</p>
                             )}
